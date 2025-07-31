@@ -1,0 +1,210 @@
+# ML Ticket Router Configuration
+
+# Model Configuration
+model:
+  type: "ensemble"  # Options: random_forest, xgboost, neural_network, ensemble
+  ensemble_models:
+    - random_forest
+    - xgboost
+    - neural_network
+  
+  random_forest:
+    n_estimators: 200
+    max_depth: 20
+    min_samples_split: 5
+    min_samples_leaf: 2
+    class_weight: "balanced"
+    n_jobs: -1
+  
+  xgboost:
+    n_estimators: 150
+    max_depth: 10
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    scale_pos_weight: 1
+  
+  neural_network:
+    hidden_layers: [512, 256, 128]
+    activation: "relu"
+    dropout_rate: 0.3
+    learning_rate: 0.001
+    batch_size: 32
+    epochs: 50
+    early_stopping_patience: 5
+
+# Preprocessing Configuration
+preprocessing:
+  text_features:
+    tfidf:
+      max_features: 5000
+      ngram_range: [1, 3]
+      min_df: 2
+      max_df: 0.95
+    
+    word_embeddings:
+      model: "sentence-transformers/all-MiniLM-L6-v2"
+      dimension: 384
+    
+    sentiment:
+      enabled: true
+      model: "nltk-vader"
+    
+    named_entities:
+      enabled: true
+      model: "en_core_web_sm"
+  
+  categorical_features:
+    - priority
+    - category
+    - source_channel
+    - user_type
+  
+  numerical_features:
+    - user_history_count
+    - previous_resolution_time
+    - account_age_days
+  
+  feature_engineering:
+    - ticket_length
+    - caps_ratio
+    - punctuation_ratio
+    - urgency_keywords_count
+    - time_of_day_sin
+    - time_of_day_cos
+    - day_of_week_sin
+    - day_of_week_cos
+
+# Training Configuration
+training:
+  test_size: 0.2
+  validation_size: 0.1
+  random_state: 42
+  cross_validation:
+    enabled: true
+    n_folds: 5
+    scoring: "f1_weighted"
+  
+  class_balancing:
+    method: "smote"  # Options: smote, class_weight, none
+    sampling_strategy: "auto"
+  
+  hyperparameter_tuning:
+    enabled: true
+    method: "optuna"  # Options: grid_search, random_search, optuna
+    n_trials: 100
+    timeout: 3600  # seconds
+
+# Feedback Loop Configuration
+feedback:
+  update_frequency: "daily"  # Options: realtime, hourly, daily, weekly
+  min_feedback_count: 100
+  confidence_threshold: 0.8
+  retraining_trigger:
+    performance_drop: 0.05  # 5% drop in accuracy
+    feedback_threshold: 0.7  # 70% negative feedback
+  
+  online_learning:
+    enabled: true
+    learning_rate: 0.01
+    batch_size: 10
+
+# Explainability Configuration
+explainability:
+  method: "shap"  # Options: shap, lime
+  shap:
+    explainer_type: "tree"  # Options: tree, kernel, deep
+    max_display: 10
+    sample_size: 100
+  
+  lime:
+    num_features: 10
+    num_samples: 5000
+
+# API Configuration
+api:
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 100
+    requests_per_hour: 5000
+  
+  caching:
+    enabled: true
+    ttl: 3600  # seconds
+    backend: "redis"
+  
+  authentication:
+    enabled: true
+    method: "api_key"  # Options: api_key, oauth2, jwt
+
+# Monitoring Configuration
+monitoring:
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1_score
+    - auc_roc
+    - routing_time_p50
+    - routing_time_p95
+    - routing_time_p99
+    - user_satisfaction
+    - resolution_time
+  
+  logging:
+    level: "INFO"
+    format: "json"
+    rotation: "daily"
+    retention_days: 30
+  
+  mlflow:
+    enabled: true
+    tracking_uri: "http://localhost:5000"
+    experiment_name: "ticket_routing"
+  
+  alerts:
+    enabled: true
+    channels:
+      - email
+      - slack
+    thresholds:
+      accuracy_drop: 0.1
+      latency_p99: 1000  # ms
+      error_rate: 0.05
+
+# Data Storage Configuration
+storage:
+  database:
+    type: "postgresql"
+    connection_string: "${DATABASE_URL}"
+  
+  model_artifacts:
+    backend: "s3"  # Options: local, s3, gcs
+    bucket: "ml-ticket-router-models"
+    prefix: "models/"
+  
+  feature_store:
+    enabled: true
+    backend: "redis"
+    ttl: 86400  # 24 hours
+
+# Deployment Configuration
+deployment:
+  model_serving:
+    framework: "mlflow"  # Options: mlflow, tensorflow_serving, custom
+    batch_inference:
+      enabled: true
+      batch_size: 100
+      timeout: 300
+  
+  scaling:
+    min_replicas: 2
+    max_replicas: 10
+    target_cpu_utilization: 70
+    target_memory_utilization: 80
+  
+  health_checks:
+    enabled: true
+    endpoint: "/health"
+    interval: 30  # seconds
+    timeout: 5  # seconds
