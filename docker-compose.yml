@@ -1,0 +1,158 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:15
+    container_name: ticket_routing_db
+    environment:
+      POSTGRES_DB: ticket_routing_db
+      POSTGRES_USER: ticket_user
+      POSTGRES_PASSWORD: secure_password_123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - ticket_routing_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticket_user -d ticket_routing_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: ticket_routing_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ticket_routing_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Main API service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ticket_routing_api
+    environment:
+      - DATABASE_URL=postgresql://ticket_user:secure_password_123@postgres:5432/ticket_routing_db
+      - REDIS_URL=redis://redis:6379
+      - SECRET_KEY=your-super-secret-key-change-in-production
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ticket_routing_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # MLflow tracking server
+  mlflow:
+    image: python:3.9-slim
+    container_name: ticket_routing_mlflow
+    working_dir: /app
+    command: >
+      bash -c "
+        pip install mlflow psycopg2-binary &&
+        mlflow server 
+          --backend-store-uri postgresql://ticket_user:secure_password_123@postgres:5432/ticket_routing_db
+          --default-artifact-root /app/mlruns
+          --host 0.0.0.0
+          --port 5000
+      "
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_data:/app/mlruns
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ticket_routing_network
+    restart: unless-stopped
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: ticket_routing_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - api
+    networks:
+      - ticket_routing_network
+    restart: unless-stopped
+
+  # Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ticket_routing_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - ticket_routing_network
+    restart: unless-stopped
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ticket_routing_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - ticket_routing_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  mlflow_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  ticket_routing_network:
+    driver: bridge
